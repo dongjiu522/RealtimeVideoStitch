@@ -97,6 +97,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -137,9 +138,11 @@
   <ItemGroup>
     <ClCompile Include="src\ImageStitch.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\stitching_detailed.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ImageStitch.h" />
+    <ClInclude Include="src\stitching_detailed.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

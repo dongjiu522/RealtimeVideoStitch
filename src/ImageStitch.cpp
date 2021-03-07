@@ -1,5 +1,5 @@
 
-
+#include <cstdint>
 #include <iostream>
 #include <fstream> 
 #include <string>
@@ -13,197 +13,252 @@ using namespace cv;
 using namespace std;
 using namespace detail;
 
-cv::Mat ImageStitch(vector<Mat> imgs)
+namespace self
 {
-	int num_images = imgs.size();
-
-	cv::Ptr<SIFT> detector = cv::SIFT::create();
-
-	vector<ImageFeatures> features(num_images);    //表示图像特征
-
-
-	for (int i = 0; i < num_images; i++)
+	ImageStitch::ImageStitch()
 	{
-		features[i].img_idx = i;
-		features[i].img_size = imgs[i].size();
-		detector->detect(imgs[i], features[i].keypoints);    //特征检测
-		detector->compute(imgs[i], features[i].keypoints, features[i].descriptors);
-	}
-	vector<MatchesInfo> pairwise_matches;    //表示特征匹配信息变量
-	BestOf2NearestMatcher matcher(false, 0.3f, 6, 6);    //定义特征匹配器，2NN方法
-	matcher(features, pairwise_matches);    //进行特征匹配
 
-	HomographyBasedEstimator estimator;    //定义参数评估器
-	vector<CameraParams> cameras;    //表示相机参数
-	estimator(features, pairwise_matches, cameras);    //进行相机参数评估
-
-	for (size_t i = 0; i < cameras.size(); ++i)    //转换相机旋转参数的数据类型
-	{
-		Mat R;
-		cameras[i].R.convertTo(R, CV_32F);
-		cameras[i].R = R;
 	}
 
-	Ptr<detail::BundleAdjusterBase> adjuster;    //光束平差法，精确相机参数
-	//adjuster = new detail::BundleAdjusterReproj();    //重映射误差方法
-	adjuster = new detail::BundleAdjusterRay();    //射线发散误差方法
-
-	adjuster->setConfThresh(1);    //设置匹配置信度，该值设为1
-	(*adjuster)(features, pairwise_matches, cameras);    //精确评估相机参数
-
-	vector<Mat> rmats;
-
-	//复制相机的旋转参数
-	for (size_t i = 0; i < cameras.size(); ++i)
+	ImageStitch::~ImageStitch()
 	{
-		rmats.push_back(cameras[i].R.clone());
-	}
-
-	//进行波形校正
-	waveCorrect(rmats, WAVE_CORRECT_HORIZ); 
-
-	//相机参数赋值
-	for (size_t i = 0; i < cameras.size(); ++i)    
-	{
-		cameras[i].R = rmats[i];
-	}
-
-	rmats.clear();    //清变量
-
-	//表示映射变换后图像的左上角坐标
-	vector<Point> corners(num_images);    
-	
-	//表示映射变换后的图像掩码
-	vector<Mat> masks_warped(num_images);    
-	
-	//表示映射变换后的图像
-	vector<Mat> images_warped(num_images);    
-	
-	//表示映射变换后的图像尺寸
-	vector<Size> sizes(num_images);    
-	
-	//表示源图的掩码
-	vector<Mat> masks(num_images);    
-
-	for (int i = 0; i < num_images; ++i)    //初始化源图的掩码
-	{
-		masks[i].create(imgs[i].size(), CV_8U);    //定义尺寸大小
-		masks[i].setTo(Scalar::all(255));    //全部赋值为255，表示源图的所有区域都使用
-	}
-
-	Ptr<WarperCreator> warper_creator;    //定义图像映射变换创造器
-	warper_creator = new cv::PlaneWarper();    //平面投影
-	//warper_creator = new cv::CylindricalWarper();    //柱面投影
-	//warper_creator = new cv::SphericalWarper();    //球面投影
-	//warper_creator = new cv::FisheyeWarper();    //鱼眼投影
-	//warper_creator = new cv::StereographicWarper();    //立方体投影
-
-	//定义图像映射变换器，设置映射的尺度为相机的焦距，所有相机的焦距都相同
-	Ptr<RotationWarper> warper = warper_creator->create(static_cast<float>(cameras[0].focal));
-	for (int i = 0; i < num_images; ++i)
-	{
-		Mat_<float> K;
-		cameras[i].K().convertTo(K, CV_32F);    //转换相机内参数的数据类型
-		//对当前图像镜像投影变换，得到变换后的图像以及该图像的左上角坐标
-		corners[i] = warper->warp(imgs[i], K, cameras[i].R, INTER_LINEAR, BORDER_REFLECT, images_warped[i]);
-		sizes[i] = images_warped[i].size();    //得到尺寸
-		//得到变换后的图像掩码
-		warper->warp(masks[i], K, cameras[i].R, INTER_NEAREST, BORDER_CONSTANT, masks_warped[i]);
-	}
-
-	imgs.clear();    //清变量
-	masks.clear();
-
-	//创建曝光补偿器，应用增益补偿方法
-	Ptr<ExposureCompensator> compensator = ExposureCompensator::createDefault(ExposureCompensator::GAIN);
-	{
-		std::vector<cv::UMat> tmp_images_warped(images_warped.size());
-		std::vector<cv::UMat> tmp_masks_warped(masks_warped.size());
-		for (int i = 0; i < images_warped.size(); i++)
+		if (true == is_inited)
 		{
-			tmp_images_warped[i] = images_warped[i].getUMat(ACCESS_READ|ACCESS_WRITE);
+			destory();
 		}
-		for (int i = 0; i < masks_warped.size(); i++)
-		{
-			tmp_masks_warped[i] = masks_warped[i].getUMat(ACCESS_READ | ACCESS_WRITE);
-		}
-		compensator->feed(corners, tmp_images_warped, tmp_masks_warped);    //得到曝光补偿器
 	}
-	for (int i = 0; i < num_images; ++i)    //应用曝光补偿器，对图像进行曝光补偿
+
+
+	bool ImageStitch::init()
 	{
-		compensator->apply(i, corners[i], images_warped[i], masks_warped[i]);
-	}
-
-	//在后面，我们还需要用到映射变换图的掩码masks_warped，因此这里为该变量添加一个副本masks_seam
-	vector<Mat> masks_seam(num_images);
-	for (int i = 0; i < num_images; i++)
-		masks_warped[i].copyTo(masks_seam[i]);
-
-	Ptr<SeamFinder> seam_finder;    //定义接缝线寻找器
-   //seam_finder = new NoSeamFinder();    //无需寻找接缝线
-   //seam_finder = new VoronoiSeamFinder();    //逐点法
-   //seam_finder = new DpSeamFinder(DpSeamFinder::COLOR);    //动态规范法
-   //seam_finder = new DpSeamFinder(DpSeamFinder::COLOR_GRAD);
-   //图割法
-   //seam_finder = new GraphCutSeamFinder(GraphCutSeamFinder::COST_COLOR);
-	seam_finder = new GraphCutSeamFinder(GraphCutSeamFinder::COST_COLOR_GRAD);
-
-	vector<Mat> images_warped_f(num_images);
-	for (int i = 0; i < num_images; ++i)    //图像数据类型转换
-		images_warped[i].convertTo(images_warped_f[i], CV_32F);
-
-	images_warped.clear();    //清内存
-
-	//得到接缝线的掩码图像masks_seam
-	{
-		std::vector<cv::UMat> tmp_images_warped_f(images_warped_f.size());
-		std::vector<cv::UMat> tmp_masks_seam(masks_seam.size());
-		for (int i = 0; i < images_warped_f.size(); i++)
+		if (true == is_inited)
 		{
-			tmp_images_warped_f[i] = images_warped_f[i].getUMat(ACCESS_READ | ACCESS_WRITE);
+			destory();
 		}
-		for (int i = 0; i < masks_seam.size(); i++)
-		{
-			tmp_masks_seam[i] = masks_seam[i].getUMat(ACCESS_READ | ACCESS_WRITE);
-		}
-		seam_finder->find(tmp_images_warped_f, corners, tmp_masks_seam);
+
+		return true;
 	}
-	vector<Mat> images_warped_s(num_images);
-	Ptr<Blender> blender;    //定义图像融合器
-
-	//blender = Blender::createDefault(Blender::NO, false);    //简单融合方法
-	//羽化融合方法
-	//blender = Blender::createDefault(Blender::FEATHER, false);
-	//FeatherBlender* fb = dynamic_cast<FeatherBlender*>(static_cast<Blender*>(blender));
-	//fb->setSharpness(0.005);    //设置羽化锐度
-
-	blender = Blender::createDefault(Blender::MULTI_BAND, false);    //多频段融合
-	MultiBandBlender* mb = dynamic_cast<MultiBandBlender*>(static_cast<Blender*>(blender));
-	mb->setNumBands(8);   //设置频段数，即金字塔层数
-
-	blender->prepare(corners, sizes);    //生成全景图像区域
-
-	//在融合的时候，最重要的是在接缝线两侧进行处理，而上一步在寻找接缝线后得到的掩码的边界就是接缝线处，因此我们还需要在接缝线两侧开辟一块区域用于融合处理，这一处理过程对羽化方法尤为关键
-	//应用膨胀算法缩小掩码面积
-	vector<Mat> dilate_img(num_images);
-	Mat element = getStructuringElement(MORPH_RECT, Size(20, 20));    //定义结构元素
-	for (int k = 0; k < num_images; k++)
+	bool ImageStitch::destory()
 	{
-		images_warped_f[k].convertTo(images_warped_s[k], CV_16S);    //改变数据类型
-		dilate(masks_seam[k], masks_seam[k], element);    //膨胀运算
-		//映射变换图的掩码和膨胀后的掩码相“与”，从而使扩展的区域仅仅限于接缝线两侧，其他边界处不受影响
-		masks_seam[k] = masks_seam[k] & masks_warped[k];
-		blender->feed(images_warped_s[k], masks_seam[k], corners[k]);    //初始化数据
+
+
+		return true;
 	}
+	bool ImageStitch::stitch(std::vector<cv::Mat> &imgs)
+	{	
+		int32_t img_num = imgs.size();
 
-	masks_seam.clear();    //清内存
-	images_warped_s.clear();
-	masks_warped.clear();
-	images_warped_f.clear();
+		if (img_num < 0)
+		{
+			return false;
+		}
 
-	Mat result, result_mask;
-	//完成融合操作，得到全景图像result和它的掩码result_mask
-	blender->blend(result, result_mask);
+		for (int i = 0 ; i < img_num; i++)
+		{
+			if (imgs[i].empty())
+			{
+				return false;
+			}
+		}
 
-	return result;
+		cv::Ptr<ORB> detector = cv::ORB::create();
+		vector<ImageFeatures> features(img_num);
+		int img_w;
+		int img_h;
+		for (int i = 0; i < img_num; i++)
+		{
+			cv::Mat  input_img = imgs[i].clone();
+#if 0
+			
+			std::vector<cv::KeyPoint> keyPoints;
+			cv::Mat detect_key_points_mask = cv::Mat::ones(imgs[i].size(), CV_8UC1);
+			
+			cv::Mat descriptors;
+			detector->detectAndCompute(input_img, detect_key_points_mask, keyPoints, descriptors);
+			
+#endif
+			img_w = input_img.cols;
+			img_h = input_img.rows;
+			float scale_w = 2.0f / 3;
+			float scale_h = 1.0f / 4;
+			
+			cv::Mat draw_key_points_img;
+			cv::Mat detect_key_points_mask = cv::Mat::zeros(imgs[i].size(), CV_8UC1);
+			
+			cv::Rect roi;
+			if (i == 0)
+			{
+				 roi = cv::Rect(img_w * 0.7, img_h *0.2, img_w - img_w * 0.7, img_h - img_h * 0.2);
+			}
+			if (i == 1)
+			{
+				roi = cv::Rect(0, img_h *0.2, img_w - img_w * 0.7, img_h - img_h * 0.2);
+			}
+
+			detect_key_points_mask(roi) = 255;
+			cv::Scalar scalar(255,255,255);
+			cv::rectangle(imgs[i], roi, scalar);
+			computeImageFeatures(detector, input_img, features[i], detect_key_points_mask);
+			//cv::drawKeypoints(input_img, features[i].keypoints, draw_key_points_img);
+
+			//cv::imwrite("./data/image/draw_key_points_img_" + std::to_string(i) + "_.jpg", draw_key_points_img);
+
+		}
+		cv::detail::MatchesInfo matches_info;
+		//cv::BFMatcher BRUTEFORCE
+		Ptr<DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE);
+		
+		//std::vector<std::vector<DMatch> > matches;
+		std::vector <std::vector<DMatch>> img1_to_img2_matches;
+		std::vector <std::vector<DMatch>> img2_to_img1_matches;
+		std::set<std::pair<int,int>> matches;
+		float ratio = 0.75;
+		matcher->knnMatch(features[0].descriptors,features[1].descriptors, img1_to_img2_matches,2);
+		for (int i = 0; i < img1_to_img2_matches.size(); i++)
+		{
+			std::vector<DMatch> & match = img1_to_img2_matches[i];
+			if (match.size() != 2)
+			{
+				continue;
+			}
+			if (match[0].distance < match[1].distance * ratio)
+			{
+				matches_info.matches.push_back(match[0]);
+				matches.insert(std::make_pair(match[0].queryIdx, match[0].trainIdx));
+			}
+		}
+#if 0
+		matcher->knnMatch(features[1].descriptors, features[0].descriptors, img2_to_img1_matches, 2);
+		for (int i = 0; i < img2_to_img1_matches.size(); i++)
+		{
+			std::vector<DMatch> & match = img2_to_img1_matches[i];
+			if (match.size() != 2)
+			{
+				continue;
+			}
+
+			if (match[0].distance <  match[1].distance *ratio )
+			{
+				if (matches.find(std::make_pair(match[0].trainIdx, match[0].queryIdx)) == matches.end())
+				{
+					matches_info.matches.push_back(match[0]);
+				}
+			}
+		}
+#endif
+		if (matches_info.matches.size() < 4)
+		{
+			return false;
+		}
+		Mat src_points(1, static_cast<int>(matches_info.matches.size()), CV_32FC2);
+		Mat dst_points(1, static_cast<int>(matches_info.matches.size()), CV_32FC2);
+		for (int i = 0; i < matches_info.matches.size(); i++)
+		{
+			auto & features1 = features[0];
+			auto & features2 = features[1];
+			const DMatch& m = matches_info.matches[i];
+
+			Point2f p = features1.keypoints[m.queryIdx].pt;
+			p.x -= features1.img_size.width * 0.5f;
+			p.y -= features1.img_size.height * 0.5f;
+			src_points.at<Point2f>(0, static_cast<int>(i)) = p;
+
+			p = features2.keypoints[m.trainIdx].pt;
+			p.x -= features2.img_size.width * 0.5f;
+			p.y -= features2.img_size.height * 0.5f;
+			dst_points.at<Point2f>(0, static_cast<int>(i)) = p;
+
+
+		}
+
+
+
+		matches_info.H = findHomography(src_points, dst_points, cv::RANSAC);
+		cv::Mat tmp;
+		cv::warpAffine(imgs[1], tmp, matches_info.H, cv::Size(img_w, img_h));
+#if 0
+		// Construct point-point correspondences for homography estimation
+		Mat src_points(1, static_cast<int>(matches_info.matches.size()), CV_32FC2);
+		Mat dst_points(1, static_cast<int>(matches_info.matches.size()), CV_32FC2);
+		for (size_t i = 0; i < matches_info.matches.size(); ++i)
+		{
+			auto & features1 = features[0];
+			auto & features2 = features[1];
+			const DMatch& m = matches_info.matches[i];
+
+			Point2f p = features1.keypoints[m.queryIdx].pt;
+			p.x -= features1.img_size.width * 0.5f;
+			p.y -= features1.img_size.height * 0.5f;
+			src_points.at<Point2f>(0, static_cast<int>(i)) = p;
+
+			p = features2.keypoints[m.trainIdx].pt;
+			p.x -= features2.img_size.width * 0.5f;
+			p.y -= features2.img_size.height * 0.5f;
+			dst_points.at<Point2f>(0, static_cast<int>(i)) = p;
+		}
+
+		// Find pair-wise motion
+		matches_info.H = findHomography(src_points, dst_points, matches_info.inliers_mask, RANSAC);
+		if (matches_info.H.empty() || std::abs(determinant(matches_info.H)) < std::numeric_limits<double>::epsilon())
+		{
+			return false;
+		}
+		// Find number of inliers
+		matches_info.num_inliers = 0;
+		for (size_t i = 0; i < matches_info.inliers_mask.size(); ++i)
+			if (matches_info.inliers_mask[i])
+				matches_info.num_inliers++;
+
+		// These coeffs are from paper M. Brown and D. Lowe. "Automatic Panoramic Image Stitching
+		// using Invariant Features"
+		matches_info.confidence = matches_info.num_inliers / (8 + 0.3 * matches_info.matches.size());
+
+		// Set zero confidence to remove matches between too close images, as they don't provide
+		// additional information anyway. The threshold was set experimentally.
+		matches_info.confidence = matches_info.confidence > 3. ? 0. : matches_info.confidence;
+
+		// Check if we should try to refine motion
+		//if (matches_info.num_inliers < num_matches_thresh2_)
+		//	return;
+
+		// Construct point-point correspondences for inliers only
+		src_points.create(1, matches_info.num_inliers, CV_32FC2);
+		dst_points.create(1, matches_info.num_inliers, CV_32FC2);
+		int inlier_idx = 0;
+		for (size_t i = 0; i < matches_info.matches.size(); ++i)
+		{
+			if (!matches_info.inliers_mask[i])
+				continue;
+			auto & features1 = features[0];
+			auto & features2 = features[1];
+			const DMatch& m = matches_info.matches[i];
+
+			Point2f p = features1.keypoints[m.queryIdx].pt;
+			p.x -= features1.img_size.width * 0.5f;
+			p.y -= features1.img_size.height * 0.5f;
+			src_points.at<Point2f>(0, inlier_idx) = p;
+
+			p = features2.keypoints[m.trainIdx].pt;
+			p.x -= features2.img_size.width * 0.5f;
+			p.y -= features2.img_size.height * 0.5f;
+			dst_points.at<Point2f>(0, inlier_idx) = p;
+
+			inlier_idx++;
+		}
+
+		// Rerun motion estimation on inliers only
+		matches_info.H = findHomography(src_points, dst_points, RANSAC);
+		cv::Mat tmp;
+		cv::warpAffine(imgs[1], tmp, matches_info.H, imgs[1].size());
+#endif
+
+		int  panorama_w = img_w + img_w;
+		int  panorama_h = std::max(img_h, img_h);
+		Mat  resultImg = Mat(panorama_w, panorama_h, CV_8UC3, Scalar::all(0));
+		Mat ROI_1 = resultImg(Rect(0, 0, img_w, img_h));
+		Mat ROI_2 = resultImg(Rect(img_w, 0, img_w, img_h));
+		imgs[0].copyTo(ROI_1);
+		tmp.copyTo(ROI_2);
+		cv::imwrite("./data/image/panorama__.jpg", resultImg);
+	}
 }
