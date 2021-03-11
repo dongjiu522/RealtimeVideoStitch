@@ -9,6 +9,7 @@
 #include"opencv2/opencv.hpp"
 #include "ImageStitch.h"
 #include "stitching_detailed.h"
+cv::Stitcher;
 
 int main()
 {
@@ -23,11 +24,13 @@ int main()
 	std::vector<cv::Mat> inputs;
 	inputs.push_back(image1);
 	inputs.push_back(image2);
-
+#if 0
 	self::ImageStitch stitch;
 	stitch.init();
-	bool ret = stitch.stitch(inputs);
-#if 0
+	cv::Mat result;
+	bool ret = stitch.stitch(inputs, result);
+	cv::imwrite("./result.jpg", result);
+#else
 	std::vector<std::string> imgs;
 	imgs.push_back(image1_path);
 	imgs.push_back(image2_path);

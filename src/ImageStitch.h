@@ -12,7 +12,7 @@ namespace self
 		ImageStitch();
 		~ImageStitch();
 		bool init();
-		bool stitch(std::vector<cv::Mat> &imgs);
+		bool stitch(std::vector<cv::Mat> &imgs, cv::Mat & out);
 		bool destory();
 	private:
 		bool is_inited = false;

@@ -138,10 +138,12 @@
   <ItemGroup>
     <ClCompile Include="src\ImageStitch.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\stitcher.cpp" />
     <ClCompile Include="src\stitching_detailed.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ImageStitch.h" />
+    <ClInclude Include="src\stitcher.hpp" />
     <ClInclude Include="src\stitching_detailed.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

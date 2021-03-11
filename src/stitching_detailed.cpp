@@ -37,17 +37,17 @@ bool try_cuda = false;
 double work_megapix = 1;
 double seam_megapix = 1;
 double compose_megapix = -1;
-float conf_thresh = 1.f;
+float conf_thresh = 0.01f;
 #ifdef HAVE_OPENCV_XFEATURES2D
 string features_type = "surf";
 float match_conf = 0.65f;
 #else
 string features_type = "sift";
-float match_conf = 0.7f;
+float match_conf = 0.3f;
 #endif
 string matcher_type = "homography";
 string estimator_type = "homography";
-string ba_cost_func = "ray";
+string ba_cost_func = "reproj";
 string ba_refine_mask = "xxxxx";
 bool do_wave_correct = true;
 WaveCorrectKind wave_correct = detail::WAVE_CORRECT_HORIZ;
@@ -130,7 +130,7 @@ int  ImageStitch(std::vector<std::string> img_names,cv::Mat & _result)
         {
             if (!is_work_scale_set)
             {
-                work_scale = min(1.0, sqrt(work_megapix * 1e6 / full_img.size().area()));
+				work_scale = 0.5;// min(1.0, sqrt(work_megapix * 1e6 / full_img.size().area()));
                 is_work_scale_set = true;
             }
             resize(full_img, img, Size(), work_scale, work_scale, INTER_LINEAR_EXACT);
@@ -180,9 +180,9 @@ int  ImageStitch(std::vector<std::string> img_names,cv::Mat & _result)
         ofstream f(save_graph_to.c_str());
         f << matchesGraphAsString(img_names, pairwise_matches, conf_thresh);
     }
-
+#if 1
     // Leave only images we are sure are from the same panorama
-    vector<int> indices = leaveBiggestComponent(features, pairwise_matches, conf_thresh);
+	vector<int> indices = leaveBiggestComponent(features, pairwise_matches, conf_thresh);
     vector<Mat> img_subset;
     vector<String> img_names_subset;
     vector<Size> full_img_sizes_subset;
@@ -204,7 +204,7 @@ int  ImageStitch(std::vector<std::string> img_names,cv::Mat & _result)
         LOGLN("Need more images");
         return -1;
     }
-
+#endif
     Ptr<Estimator> estimator;
     if (estimator_type == "affine")
         estimator = makePtr<AffineBasedEstimator>();
@@ -223,7 +223,7 @@ int  ImageStitch(std::vector<std::string> img_names,cv::Mat & _result)
         Mat R;
         cameras[i].R.convertTo(R, CV_32F);
         cameras[i].R = R;
-        LOGLN("Initial camera intrinsics #" << indices[i]+1 << ":\nK:\n" << cameras[i].K() << "\nR:\n" << cameras[i].R);
+        //LOGLN("Initial camera intrinsics #" << indices[i]+1 << ":\nK:\n" << cameras[i].K() << "\nR:\n" << cameras[i].R);
     }
 
     Ptr<detail::BundleAdjusterBase> adjuster;
@@ -255,7 +255,7 @@ int  ImageStitch(std::vector<std::string> img_names,cv::Mat & _result)
     vector<double> focals;
     for (size_t i = 0; i < cameras.size(); ++i)
     {
-        LOGLN("Camera #" << indices[i]+1 << ":\nK:\n" << cameras[i].K() << "\nR:\n" << cameras[i].R);
+        //LOGLN("Camera #" << indices[i]+1 << ":\nK:\n" << cameras[i].K() << "\nR:\n" << cameras[i].R);
         focals.push_back(cameras[i].focal);
     }
 
@@ -464,7 +464,7 @@ int  ImageStitch(std::vector<std::string> img_names,cv::Mat & _result)
 
     for (int img_idx = 0; img_idx < num_images; ++img_idx)
     {
-        LOGLN("Compositing image #" << indices[img_idx]+1);
+        //LOGLN("Compositing image #" << indices[img_idx]+1);
 
         // Read image and resize it if necessary
         full_img = imread(samples::findFile(img_names[img_idx]));
